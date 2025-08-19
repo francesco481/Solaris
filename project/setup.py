@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name="unet-training",  # Updated name
+    name="unet-training",
     version="0.1.0",
     packages=setuptools.find_packages(),
     install_requires=[
@@ -15,9 +15,9 @@ setuptools.setup(
         "gcsfs==2024.5.0",
         "fsspec==2024.5.0",
     ],
-    # You can keep your original author info here
     author="Georgescu Radu Andrei",
     author_email="radugeorgescu2020@gmail.com",
     description="A training application for a multi-head U-Net model on roof segmentation.",
     python_requires=">=3.8",
+
 )
