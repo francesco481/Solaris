@@ -1,0 +1,16 @@
+worker_pool_specs:
+- machine_spec:
+    machine_type: "n1-standard-4"
+    accelerator_type: "NVIDIA_TESLA_T4"
+    accelerator_count: 1
+  replica_count: 1
+  python_package_spec:
+    executor_image_uri: "europe-docker.pkg.dev/vertex-ai/training/tf-gpu.2-15.py310:latest"
+    package_uris:
+    - "gs://unet-training-data/my_project/unet-training-0.1.0.tar.gz"
+    python_module: "trainer.U-Net"
+    args:
+    - "--train"
+scheduling:
+  restart_job_on_worker_restart: false
+  timeout: "7200s"
