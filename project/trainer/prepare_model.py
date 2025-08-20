@@ -2,7 +2,7 @@ import os
 import zipfile
 import urllib.request
 
-MODEL_URL = "https://github.com/francesco481/Solaris/releases/download/v1.0-model/best.zip"
+MODEL_URL = "https://github.com/francesco481/Solaris/releases/download/v1/best.zip"
 CHECKPOINT_DIR = "project/trainer/checkpoints"
 ZIP_PATH = os.path.join(CHECKPOINT_DIR, "best.zip")
 PTH_PATH = os.path.join(CHECKPOINT_DIR, "best.pth")
