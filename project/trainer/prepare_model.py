@@ -1,43 +1,37 @@
 import os
 import zipfile
-import argparse
+import urllib.request
 
-def extract_model(archive_path="checkpoints/best.pth.zip", output_dir="checkpoints"):
-    pth_path = os.path.join(output_dir, "best.pth")
+MODEL_URL = "https://github.com/francesco481/Solaris/releases/download/v1.0-model/best.zip"
+CHECKPOINT_DIR = "project/trainer/checkpoints"
+ZIP_PATH = os.path.join(CHECKPOINT_DIR, "best.zip")
+PTH_PATH = os.path.join(CHECKPOINT_DIR, "best.pth")
 
-    if not os.path.exists(archive_path):
-        print(f"[EROARE] Arhiva nu a fost gasita: {archive_path}")
+def download_model():
+    """Descarcă modelul din GitHub Releases dacă nu există local."""
+    if os.path.exists(ZIP_PATH) or os.path.exists(PTH_PATH):
+        print("[INFO] Modelul există deja")
         return
-    
-    if os.path.exists(pth_path):
-        print(f"[INFO] {pth_path} exista deja")
+
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    print(f"[INFO] Se descarca modelul de la {MODEL_URL} ...")
+    urllib.request.urlretrieve(MODEL_URL, ZIP_PATH)
+    print(f"[INFO] Model salvat în {ZIP_PATH}")
+
+def extract_model():
+    """Dezarhivează modelul dacă nu este deja extras."""
+    if os.path.exists(PTH_PATH):
+        print("[INFO] best.pth există deja")
         return
-    
-    os.makedirs(output_dir, exist_ok=True)
 
-    with zipfile.ZipFile(archive_path, "r") as zip_ref:
-        zip_ref.extractall(output_dir)
-    
-    print(f"[INFO] Arhiva {archive_path} a fost dezarhivata in {output_dir}")
-    print(f"[INFO] Modelul best.pth este pregatit pentru a fi folosit de U-Net.py")
+    print(f"[INFO] Se dezarhiveaza {ZIP_PATH} ...")
+    with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
+        zip_ref.extractall(CHECKPOINT_DIR)
+    print(f"[INFO] Model dezarhivat în {CHECKPOINT_DIR}")
 
-
-def prepare_for_push(output_dir="checkpoints"):
-    pth_path = os.path.join(output_dir, "best.pth")
-    if os.path.exists(pth_path):
-        os.remove(pth_path)
-        print(f"[INFO] Fisierul {pth_path} a fost sters")
-    else:
-        print(f"[INFO] {pth_path} nu exista, nimic de sters.")
-    print(f"[INFO] Modelul este pregatit pentru push")
-
+def main():
+    download_model()
+    extract_model()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Pregateste modelul pentru rulare sau push")
-    parser.add_argument("--push", action="store_true", help="Sterge best.pth dar pastreaza arhiva pentru push in repo")
-    args = parser.parse_args()
-
-    if args.push:
-        prepare_for_push()
-    else:
-        extract_model()
+    main()

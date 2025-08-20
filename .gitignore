@@ -1,0 +1,3 @@
+# .gitignore
+project/trainer/checkpoints/*.pth
+project/trainer/checkpoints/*.zip
