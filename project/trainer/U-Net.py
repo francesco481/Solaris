@@ -4,6 +4,7 @@ import random
 from typing import List
 import io
 from urllib.parse import urlparse
+from google.cloud import storage
 
 import numpy as np
 from PIL import Image
@@ -81,7 +82,7 @@ class SmartRoofMaskDataset(Dataset):
             
             mask_path = os.path.join(self.mask_dir, f"{base}_sem.png")
             if not os.path.isfile(mask_path):
-                raise FileNotFoundError(f"Lipsă mască pentru {fname}: {mask_path}")
+                raise FileNotFoundError(f"Lipsa masca pentru {fname}: {mask_path}")
             mask = Image.open(mask_path)
 
         img_t = self.tx_img(img)
@@ -141,28 +142,11 @@ def set_seed(s=42):
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
-# Train loop
-def main():
-    ap = argparse.ArgumentParser("Train U-Net on bitmasks (Local/GCS)")
-    ap.add_argument("--img_dir", required=True, help="Calea catre folderul cu imagini (locala sau gs://).")
-    ap.add_argument("--mask_dir", required=True, help="Calea catre folderul cu masti (locala sau gs://).")
-    ap.add_argument("--size", type=int, default=512)
-    ap.add_argument("--batch", type=int, default=4)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--epochs", type=int, default=20)
-    ap.add_argument("--val_split", type=float, default=0.15)
-    ap.add_argument("--num_workers", type=int, default=2)
-    ap.add_argument("--weights", default="checkpoints/best.pth", help="Calea pentru a salva/incarca checkpoint.")
-    ap.add_argument("--resume", action="store_true", help="Daca exista checkpoint, reia antrenarea.")
-    ap.add_argument("--gcs_bucket", default=None, help="Bucket-ul GCS unde se salvează modelul.")
-    ap.add_argument("--class_weights", default=None, help="Ex: '1.0,1.0,2.0'.")
-    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Dispozitivul de utilizat (default: auto).")
-    args = ap.parse_args()
-
+def train(args):
     os.makedirs("checkpoints", exist_ok=True)
     set_seed(42)
 
-    #Selectare Dispozitiv
+    # Selectare Dispozitiv
     if args.device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
@@ -172,13 +156,16 @@ def main():
         device = "cpu"
     print(f"[INFO] Se utilizeaza dispozitivul: {device}")
     
-    #Incarcare Date
+    # Incarcare Date
     print("[INFO] Se incarca setul de date...")
-    ds = SmartRoofMaskDataset(args.img_dir, args.mask_dir, args.size)
-    print(f"[INFO] Au fost gasite {len(ds)} imagini.")
-    n_val = max(1, int(len(ds) * args.val_split))
-    n_train = len(ds) - n_val
-    train_ds, val_ds = random_split(ds, [n_train, n_val])
+    full_ds = SmartRoofMaskDataset(args.img_dir, args.mask_dir, args.size)
+    print(f"[INFO] Au fost gasite {len(full_ds)} imagini.")
+    
+    # Impartire date pentru antrenament si validare
+    n_val = max(1, int(len(full_ds) * args.val_split))
+    n_train = len(full_ds) - n_val
+    train_ds, val_ds = random_split(full_ds, [n_train, n_val])
+    
     pin_memory = (device == "cuda")
     train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=args.num_workers, pin_memory=pin_memory)
     val_loader = DataLoader(val_ds, batch_size=args.batch, shuffle=False, num_workers=args.num_workers, pin_memory=pin_memory)
@@ -239,24 +226,112 @@ def main():
             torch.save({
                 "model": model.state_dict(),
                 "optimizer": opt.state_dict(),
-                "best_val": best_val
+                "best_val": best_val,
+                "epoch": epoch
             }, model_path)
             print("Model salvat local.")
             
-            output_gcs_path = f"gs://unet-training-data/models/best_epoch_{epoch}.pth"
+            output_gcs_path = f"gs://{args.gcs_bucket}/models/best_epoch_{epoch}.pth"
             
-            #Verificare salvare in cloud
             try:
-                import subprocess
-                subprocess.run(["gsutil", "cp", model_path, output_gcs_path], check=True)
+                storage_client = storage.Client()
+                
+                bucket_name = args.gcs_bucket
+                destination_blob_name = f"models/best_epoch_{epoch}.pth"
+                
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(destination_blob_name)
+                
+                blob.upload_from_filename(model_path)
+                
                 print(f"Modelul a fost copiat in Cloud Storage: {output_gcs_path}")
-            except subprocess.CalledProcessError as e:
+            except Exception as e:
                 print(f"Eroare la copierea modelului in Cloud Storage: {e}")
 
-            # Remove the local file to clean up
             os.remove(model_path)
 
     print("[DONE] Antrenare incheiata.")
 
+def predict(args):
+    # Selectare Dispozitiv
+    if args.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
+    if device == "cuda" and not torch.cuda.is_available():
+        print("[AVERTISMENT] CUDA nu este disponibil, se va folosi CPU.")
+        device = "cpu"
+    print(f"[INFO] Se utilizeaza dispozitivul: {device}")
+    
+    # Incarca modelul
+    model = UNet(n_classes=3).to(device)
+    if os.path.isfile(args.weights):
+        ckpt = torch.load(args.weights, map_location=device)
+        model.load_state_dict(ckpt["model"])
+        print(f"[INFO] Model incarcat de la checkpoint: {args.weights}")
+    else:
+        raise FileNotFoundError(f"Nu a fost gasit checkpoint la calea: {args.weights}")
+
+    # Incarca imaginea de test
+    print(f"[INFO] Se incarca imaginea de test de la: {args.predict}")
+    transform = T.Compose([T.ToTensor(), T.Resize((512, 512), antialias=True)])
+    test_img = Image.open(args.predict).convert("RGB")
+    test_img_tensor = transform(test_img).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        test_img_batch = test_img_tensor.unsqueeze(0)
+        logits = model(test_img_batch)
+        sem_pred_tensor = torch.argmax(logits, dim=1)[0]
+
+    # Pregatire pentru plot
+    import matplotlib.pyplot as plt
+    sem_pred_np = sem_pred_tensor.cpu().numpy()
+    img_np = test_img_tensor.permute(1, 2, 0).cpu().numpy()
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+
+    # 1. Imaginea originala
+    axs[0].imshow(img_np)
+    axs[0].set_title("Imagine Originala")
+    axs[0].axis("off")
+
+    # 2. Masca prezisa
+    axs[1].imshow(sem_pred_np, cmap="jet")
+    axs[1].set_title("Masca Prezisa")
+    axs[1].axis("off")
+
+    # 3. Suprapunere (masca + imagine)
+    axs[2].imshow(img_np)  # fundalul
+    axs[2].imshow(sem_pred_np, cmap="jet", alpha=0.5)  # masca semi-transparenta
+    axs[2].set_title("Suprapunere Imagine + Masca")
+    axs[2].axis("off")
+
+    plt.show()
+
+
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser("Train/Predict U-Net on bitmasks (Local/GCS)")
+    ap.add_argument("--img_dir", help="Calea catre folderul cu imagini de antrenament (locala sau gs://).")
+    ap.add_argument("--mask_dir", help="Calea catre folderul cu masti de antrenament (locala sau gs://).")
+    ap.add_argument("--val_split", type=float, default=0.15, help="Proportia setului de validare din totalul de date.")
+    ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--num_workers", type=int, default=2)
+    ap.add_argument("--weights", default="checkpoints/best.pth", help="Calea pentru a salva/incarca checkpoint.")
+    ap.add_argument("--resume", action="store_true", help="Daca exista checkpoint, reia antrenarea.")
+    ap.add_argument("--gcs_bucket", default=None, help="Bucket-ul GCS unde se salveaza modelul.")
+    ap.add_argument("--class_weights", default=None, help="Ex: '1.0,1.0,2.0'.")
+    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Dispozitivul de utilizat (default: auto).")
+    ap.add_argument("--predict", type=str, help="Calea catre o imagine individuala pentru predictie.")
+    
+    args = ap.parse_args()
+
+    if args.predict:
+        predict(args)
+    elif args.img_dir and args.mask_dir:
+        train(args)
+    else:
+        print("[EROARE] Trebuie specificate argumentele pentru antrenament (--img_dir si --mask_dir) sau pentru predictie (--predict).")

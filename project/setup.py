@@ -11,6 +11,7 @@ setuptools.setup(
         "tqdm==4.66.4",
         "torch==2.3.0",
         "torchvision==0.18.0",
+        "google-cloud-storage",
         "matplotlib==3.8.4",
         "gcsfs==2024.5.0",
         "fsspec==2024.5.0",
@@ -19,5 +20,4 @@ setuptools.setup(
     author_email="radugeorgescu2020@gmail.com",
     description="A training application for a multi-head U-Net model on roof segmentation.",
     python_requires=">=3.8",
-
 )
