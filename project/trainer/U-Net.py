@@ -231,13 +231,13 @@ def train(args):
             }, model_path)
             print("Model salvat local.")
             
-            output_gcs_path = f"gs://{args.gcs_bucket}/models/best_epoch_{epoch}.pth"
+            output_gcs_path = f"gs://{args.gcs_bucket}/models/best_epoch_{epoch}v6+.pth"
             
             try:
                 storage_client = storage.Client()
                 
                 bucket_name = args.gcs_bucket
-                destination_blob_name = f"models/best_epoch_{epoch}.pth"
+                destination_blob_name = f"models/best_epoch_{epoch}v6+.pth"
                 
                 bucket = storage_client.bucket(bucket_name)
                 blob = bucket.blob(destination_blob_name)
