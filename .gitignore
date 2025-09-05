@@ -1,3 +1,5 @@
 # .gitignore
 project/trainer/checkpoints/*.pth
 project/trainer/checkpoints/*.zip
+project/unet_training.egg-info/
+project/trainer/__pycache__/
