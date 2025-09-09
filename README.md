@@ -36,10 +36,10 @@ $$
 
 where:
 
-- \( A \) = area of the roof (in pixels)  
-- \( A_{\text{max}} \) = maximum area among all detected roofs (used for normalization)  
-- \( L \) = normalized average brightness inside the roof (V channel in HSV, so in the range [0,1])  
-- \( C \) = compactness/circularity of the roof (calculated as $\( C = \frac{4 \pi A}{P^2} \)$, theoretical values approximately in [0,1])  
+- $\( A \)$ = area of the roof (in pixels)  
+- $\( A_{\text{max}} \)$ = maximum area among all detected roofs (used for normalization)  
+- $\( L \)$ = normalized average brightness inside the roof  
+- $\( C \)$ = compactness/circularity of the roof (calculated as $\( C = \frac{4 \pi A}{P^2} \)$, theoretical values approximately in [0,1])  
 
 The coefficients (0.4, 0.4, 0.2) are weights that sum to 1 and define the relative importance of each component.
 
