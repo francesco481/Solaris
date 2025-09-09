@@ -123,6 +123,57 @@ def instances_to_coco(labeled_mask, image_filename, image_id=1, category_id=1):
     }
     return coco
 
+def calculeaza_scor_acoperis(inst_mask, img, min_area=500):
+    """Calculeaza scoruri pentru fiecare acoperis detectat.
+       Formula: arie + luminozitate + compactitate, normalizate
+    """
+    scoruri = {}
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+
+    arii = []
+    luminozitati = []
+    compactitati = []
+    labels = []
+
+    for lab in range(1, inst_mask.max()+1):
+        m = (inst_mask == lab)
+        A = m.sum()
+        if A < min_area:
+            continue
+
+        # Luminozitate medie (canal V)
+        L = hsv[:, :, 2][m].mean() / 255.0
+
+        # Perimetru pentru compactitate
+        cnts, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            continue
+        P = cv2.arcLength(cnts[0], True)
+        C = (4 * np.pi * A) / (P * P + 1e-6)
+
+        labels.append(lab)
+        arii.append(A)
+        luminozitati.append(L)
+        compactitati.append(C)
+
+    if not arii:
+        return scoruri
+
+    A_max = max(arii)
+
+    scoruri_raw = []
+    for A, L, C in zip(arii, luminozitati, compactitati):
+        s = 0.4 * (A / A_max) + 0.4 * L + 0.2 * C
+        scoruri_raw.append(s)
+
+    # Normalizare
+    s_max = max(scoruri_raw)
+    for lab, s in zip(labels, scoruri_raw):
+        scoruri[lab] = (s / s_max) * 10.0
+
+    return scoruri
+
+
 def run_pipeline(weights, image_path, outdir, device="cpu", verbose=False):
     os.makedirs(outdir, exist_ok=True)
     mask_path = Path(outdir) / "semantic_mask.png"
@@ -138,14 +189,32 @@ def run_pipeline(weights, image_path, outdir, device="cpu", verbose=False):
     out_json = Path(outdir) / "annotations.json"
     with open(out_json, "w") as f:
         json.dump(coco, f, indent=2)
+    print(f"[INFO] Pasul 4: calcul scoruri acoperis")
 
-    # Plot (optional)
+    img = np.array(Image.open(image_path).convert("RGB"))
+    h, w = img.shape[:2]
+    inst_mask_resized = cv2.resize(inst_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    scoruri = calculeaza_scor_acoperis(inst_mask_resized, img)
+
+    img_annot = img.copy()
+    for lab, scor in scoruri.items():
+        ys, xs = np.where(inst_mask_resized == lab)
+        if len(xs) == 0 or len(ys) == 0:
+            continue
+        cx, cy = int(xs.mean()), int(ys.mean())
+        cv2.putText(img_annot, f"{scor:.1f}", (cx, cy),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+
+
+    out_score_img = Path(outdir) / "annotated_scores.png"
+    Image.fromarray(img_annot).save(out_score_img)
+    print(f"[INFO] Scorurile au fost salvate in {out_score_img}")
+
     if verbose:
-        img = np.array(Image.open(image_path).convert("RGB"))
         cmap = np.random.randint(0, 255, size=(inst_mask.max() + 1, 3), dtype=np.uint8)
         colored_mask = cmap[inst_mask]
 
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
         axs[0].imshow(img)
         axs[0].set_title("Imagine originala")
         axs[0].axis("off")
@@ -153,9 +222,18 @@ def run_pipeline(weights, image_path, outdir, device="cpu", verbose=False):
         axs[1].imshow(colored_mask)
         axs[1].set_title("Masca instante")
         axs[1].axis("off")
+
+        axs[2].imshow(img_annot)
+        axs[2].set_title("Acoperisuri cu scor")
+        axs[2].axis("off")
         plt.show()
 
+
+
     print(f"[INFO] Pipeline finalizat. Rezultatele sunt salvate in {outdir}")
+
+
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser("Pipeline Detectie Acoperis")

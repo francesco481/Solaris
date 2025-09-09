@@ -24,7 +24,24 @@ Example
 python3 detect_roofs.py --weights checkpoints/best.pth --image ../../dataset/test/tile_lat_-33-855365_lng_151-097497_png.rf.e935e42698bb8799d37cd5df04fd21ff.jpg --outdir res
 ```
 
-Note: The `--verbose` argument plots the bitmask after the CCA.
+Note: The `--verbose` argument plots the bitmask after the CCA and the roofs overlaid with their scores.
+
+## Scores
+
+The score \( s \) for a roof is calculated as:
+
+$$
+s = 0.4 \cdot \frac{A}{A_{\text{max}}} + 0.4 \cdot L + 0.2 \cdot C
+$$
+
+where:
+
+- \( A \) = area of the roof (in pixels)  
+- \( A_{\text{max}} \) = maximum area among all detected roofs (used for normalization)  
+- \( L \) = normalized average brightness inside the roof (V channel in HSV, so in the range [0,1])  
+- \( C \) = compactness/circularity of the roof (calculated as $\( C = \frac{4 \pi A}{P^2} \)$, theoretical values approximately in [0,1])  
+
+The coefficients (0.4, 0.4, 0.2) are weights that sum to 1 and define the relative importance of each component.
 
 ## Output
 
